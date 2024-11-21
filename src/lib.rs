@@ -11,10 +11,8 @@ use winit::{
     window::{ Window, WindowBuilder },
 };
 
-// Image processing import
-// use image::GenericImageView;
-
 use wgpu::util::DeviceExt;
+use image::GenericImageView; 
 
 // Import for WebAssembly (wasm32) target, if applicable
 #[cfg(target_arch = "wasm32")]
@@ -100,11 +98,6 @@ impl<'a> State<'a> {
         // Configure the surface with device and configuration
         surface.configure(&device, &config);
 
-        // ** NEW CODE STARTS HERE **
-
-        // Import image crate for loading PNG files
-        use image::GenericImageView; // Add this import at the top of your file
-
         // Load the image
         let img = image::open("assets/scenary.png").expect("Failed to load texture");
         let rgba = img.to_rgba8();
@@ -163,24 +156,15 @@ impl<'a> State<'a> {
             })
         );
 
-        // ** NEW CODE ENDS HERE **
-
         // Load the WGSL shader code from an external file
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        // let transform_matrix = glam::Mat4::IDENTITY.to_cols_array();
-        // let uniform_buffer = device.create_buffer_init(
-        //     &(wgpu::util::BufferInitDescriptor {
-        //         label: Some("Uniform Buffer"),
-        //         contents: bytemuck::cast_slice(&transform_matrix),
-        //         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        //     })
-        // );
-
+        //  Create a 4x4 transformation matrix for rotating the texture
         let transform_matrix = [0.0f32; 16]; // 4x4 matrix
+
         let uniform_buffer = device.create_buffer_init(
             &(wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -189,8 +173,7 @@ impl<'a> State<'a> {
             })
         );
 
-        // ** UPDATED BIND GROUP LAYOUT **
-
+        //  Create a uniform buffer to store the transformation matrix
         let bind_group_layout = device.create_bind_group_layout(
             &(wgpu::BindGroupLayoutDescriptor {
                 label: Some("Bind Group Layout"),
@@ -228,8 +211,7 @@ impl<'a> State<'a> {
             })
         );
 
-        // ** UPDATED BIND GROUP **
-
+        //  Create a bind group that links the previously defined layout with the actual resources (uniform buffer, texture view, and sampler)
         let bind_group = device.create_bind_group(
             &(wgpu::BindGroupDescriptor {
                 layout: &bind_group_layout,
@@ -342,7 +324,7 @@ impl<'a> State<'a> {
 
     // Update function to rotate the square in 3D space
     fn update(&mut self) {
-        // Update rotation angles with different speeds
+        // Rotation angles with different speeds
         self.rotation_angle_x += 0.0001; // Speed for X-axis rotation
         self.rotation_angle_y += 0.0003; // Speed for Y-axis rotation
     
@@ -426,7 +408,9 @@ impl<'a> State<'a> {
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
+// Initializes the application and sets up logging.
 pub async fn run() {
+    // Configures the logger based on the target architecture.
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -436,6 +420,7 @@ pub async fn run() {
         }
     }
 
+    // Initialize the main event loop for handling window events
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
@@ -444,6 +429,8 @@ pub async fn run() {
         use winit::dpi::PhysicalSize;
         use winit::platform::web::WindowExtWebSys;
 
+        // In WebAssembly environment, get the global window object
+        // and set up the canvas element for WebGL rendering
         web_sys
             ::window()
             .and_then(|win| win.document())
@@ -458,18 +445,22 @@ pub async fn run() {
         let _ = window.request_inner_size(PhysicalSize::new(450, 400));
     }
 
+    // Initialize the main application state
     let mut state = State::new(&window).await;
 
+    // Start the event loop and begin processing window events.
     event_loop
         .run(move |event, control_flow| {
-            // Use state's window reference instead of moving the original window
+            // Request a redraw of the window contents.
             state.window().request_redraw();
 
+            // Process incoming window events and handle user interactions.
             match event {
                 Event::WindowEvent { ref event, window_id } if window_id == state.window().id() => {
                     if !state.input(event) {
                         match event {
-                            | WindowEvent::CloseRequested
+                            // Handle window close request or escape key press to exit the application.
+                            WindowEvent::CloseRequested
                             | WindowEvent::KeyboardInput {
                                   event: KeyEvent {
                                       state: ElementState::Pressed,
@@ -478,11 +469,18 @@ pub async fn run() {
                                   },
                                   ..
                               } => control_flow.exit(),
+
+                            // Resize the window when it's resized by the user.
                             WindowEvent::Resized(physical_size) => {
                                 state.resize(*physical_size);
                             }
+
+                            // Handle redrawing requests and update the scene.
                             WindowEvent::RedrawRequested => {
-                                state.update(); // This will now be called on each redraw
+                                // Update the scene state and prepare for rendering.
+                                state.update(); 
+
+                                // Render the scene and handle any surface errors.
                                 match state.render() {
                                     Ok(_) => {}
                                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) =>
