@@ -16,11 +16,11 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
-    var positions = array<vec2<f32>, 4>(
-        vec2<f32>(-0.5, -0.5), // Bottom-left
-        vec2<f32>(0.5, -0.5),  // Bottom-right
-        vec2<f32>(-0.5, 0.5),  // Top-left
-        vec2<f32>(0.5, 0.5)    // Top-right
+    var positions = array<vec3<f32>, 4>(
+        vec3<f32>(-0.5, -0.5, 0.0), // Bottom-left
+        vec3<f32>(0.5, -0.5, 0.0),  // Bottom-right
+        vec3<f32>(-0.5, 0.5, 0.0),  // Top-left
+        vec3<f32>(0.5, 0.5, 0.0)    // Top-right
     );
 
     var uvs = array<vec2<f32>, 4>(
@@ -36,7 +36,7 @@ fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
     );
 
     let index = indices[in_vertex_index];
-    let pos = vec4<f32>(positions[index], 0.0, 1.0);
+    let pos = vec4<f32>(positions[index], 1.0); // Convert to vec4 with w=1.0
 
     var output: VertexOutput;
     output.clip_position = transform * pos;

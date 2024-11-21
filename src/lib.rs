@@ -7,8 +7,8 @@ use std::iter;
 use winit::{
     event::*,
     event_loop::EventLoop,
-    keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowBuilder},
+    keyboard::{ KeyCode, PhysicalKey },
+    window::{ Window, WindowBuilder },
 };
 
 // Image processing import
@@ -31,7 +31,8 @@ struct State<'a> {
     render_pipeline: wgpu::RenderPipeline, // The pipeline object that contains rendering configurations
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
-    rotation_angle: f32,
+    rotation_angle_x: f32,
+    rotation_angle_y: f32,
 }
 
 // Implementation of the State struct
@@ -39,7 +40,7 @@ impl<'a> State<'a> {
     // Asynchronous method to initialize a new State instance
     async fn new(window: &'a Window) -> State<'a> {
         let size = window.inner_size(); // Get the initial window size
-    
+
         // Create an instance for interfacing with the GPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             #[cfg(not(target_arch = "wasm32"))]
@@ -48,10 +49,10 @@ impl<'a> State<'a> {
             backends: wgpu::Backends::GL, // Use OpenGL backend for WebAssembly
             ..Default::default()
         });
-    
+
         // Create a surface for rendering in the window
-        let surface =  instance.create_surface(window).unwrap();
-    
+        let surface = instance.create_surface(window).unwrap();
+
         // Request a GPU adapter that meets the preferred criteria
         let adapter = instance
             .request_adapter(
@@ -62,7 +63,7 @@ impl<'a> State<'a> {
                 })
             ).await
             .expect("Failed to find a compatible GPU adapter");
-    
+
         // Request a logical device and a command queue from the adapter
         let (device, queue) = adapter
             .request_device(
@@ -75,7 +76,7 @@ impl<'a> State<'a> {
                 None
             ).await
             .unwrap();
-    
+
         // Get the supported formats and modes for the surface
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps.formats
@@ -83,7 +84,7 @@ impl<'a> State<'a> {
             .copied()
             .find(|f| f.is_srgb()) // Prefer sRGB format for better color accuracy
             .unwrap_or(surface_caps.formats[0]);
-    
+
         // Configure the surface with specified usage and format
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Usage for render output
@@ -93,40 +94,42 @@ impl<'a> State<'a> {
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2, // Or Some(value) 
+            desired_maximum_frame_latency: 2, // Or Some(value)
         };
-    
+
         // Configure the surface with device and configuration
         surface.configure(&device, &config);
-    
+
         // ** NEW CODE STARTS HERE **
-    
+
         // Import image crate for loading PNG files
         use image::GenericImageView; // Add this import at the top of your file
-    
+
         // Load the image
-        let img = image::open("assets/clouds.png").expect("Failed to load texture");
+        let img = image::open("assets/scenary.png").expect("Failed to load texture");
         let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
-    
+
         // Create the texture
         let texture_size = wgpu::Extent3d {
             width: dimensions.0,
             height: dimensions.1,
             depth_or_array_layers: 1,
         };
-    
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Texture"),
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-    
+
+        let texture = device.create_texture(
+            &(wgpu::TextureDescriptor {
+                label: Some("Texture"),
+                size: texture_size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            })
+        );
+
         // Copy the image data into the texture
         queue.write_texture(
             wgpu::ImageCopyTexture {
@@ -141,32 +144,43 @@ impl<'a> State<'a> {
                 bytes_per_row: Some(4 * dimensions.0),
                 rows_per_image: None,
             },
-            texture_size,
+            texture_size
         );
-    
+
         // Create a texture view
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    
+
         // Create a sampler
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-    
+        let sampler = device.create_sampler(
+            &(wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            })
+        );
+
         // ** NEW CODE ENDS HERE **
-    
+
         // Load the WGSL shader code from an external file
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
-    
-        let transform_matrix = glam::Mat4::IDENTITY.to_cols_array();
+
+        // let transform_matrix = glam::Mat4::IDENTITY.to_cols_array();
+        // let uniform_buffer = device.create_buffer_init(
+        //     &(wgpu::util::BufferInitDescriptor {
+        //         label: Some("Uniform Buffer"),
+        //         contents: bytemuck::cast_slice(&transform_matrix),
+        //         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        //     })
+        // );
+
+        let transform_matrix = [0.0f32; 16]; // 4x4 matrix
         let uniform_buffer = device.create_buffer_init(
             &(wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -174,9 +188,9 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             })
         );
-    
+
         // ** UPDATED BIND GROUP LAYOUT **
-    
+
         let bind_group_layout = device.create_bind_group_layout(
             &(wgpu::BindGroupLayoutDescriptor {
                 label: Some("Bind Group Layout"),
@@ -213,9 +227,9 @@ impl<'a> State<'a> {
                 ],
             })
         );
-    
+
         // ** UPDATED BIND GROUP **
-    
+
         let bind_group = device.create_bind_group(
             &(wgpu::BindGroupDescriptor {
                 layout: &bind_group_layout,
@@ -236,16 +250,16 @@ impl<'a> State<'a> {
                 label: Some("Bind Group"),
             })
         );
-    
+
         // Set up the render pipeline layout
         let render_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
+            &(wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[],
-            },
-        );        
-    
+            })
+        );
+
         // Create the render pipeline
         let render_pipeline = device.create_render_pipeline(
             &(wgpu::RenderPipelineDescriptor {
@@ -288,7 +302,7 @@ impl<'a> State<'a> {
                 cache: None,
             })
         );
-    
+
         // Return the initialized State
         Self {
             surface,
@@ -300,10 +314,10 @@ impl<'a> State<'a> {
             render_pipeline,
             uniform_buffer,
             bind_group,
-            rotation_angle: 0.0,
+            rotation_angle_x: 0.0,
+            rotation_angle_y: 0.0,
         }
     }
-    
 
     // Accessor for the window reference
     fn window(&self) -> &Window {
@@ -326,36 +340,56 @@ impl<'a> State<'a> {
         false
     }
 
-    // Update function (empty in this example as no animations or transformations are applied)
+    // Update function to rotate the square in 3D space
     fn update(&mut self) {
-        self.rotation_angle += 0.001; // Rotate by a small angle each frame
-        let rotation = glam::Mat4::from_rotation_z(self.rotation_angle);
+        // Update rotation angles with different speeds
+        self.rotation_angle_x += 0.0001; // Speed for X-axis rotation
+        self.rotation_angle_y += 0.0003; // Speed for Y-axis rotation
     
+        // Create rotation matrices
+        let rotation_x = glam::Mat4::from_rotation_x(self.rotation_angle_x);
+        let rotation_y = glam::Mat4::from_rotation_y(self.rotation_angle_y);
+    
+        // Combine rotations
+        let model = rotation_y * rotation_x;
+    
+        // View matrix
+        let eye = glam::Vec3::new(0.0, 0.0, 2.0);
+        let center = glam::Vec3::ZERO;
+        let up = glam::Vec3::Y;
+        let view = glam::Mat4::look_at_rh(eye, center, up);
+    
+        // Projection matrix
         let aspect_ratio = self.size.width as f32 / self.size.height as f32;
-        let scale = if aspect_ratio >= 1.0 {
-            glam::Mat4::from_scale(glam::Vec3::new(1.0 / aspect_ratio, 1.0, 1.0))
-        } else {
-            glam::Mat4::from_scale(glam::Vec3::new(1.0, aspect_ratio, 1.0))
-        };
+        let fovy = 45.0f32.to_radians();
+        let projection = glam::Mat4::perspective_rh(fovy, aspect_ratio, 0.1, 100.0);
     
-        let transform = scale * rotation;
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&transform.to_cols_array()));
-    }    
+        // MVP matrix
+        let mvp = projection * view * model;
+    
+        // Update the uniform buffer
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&mvp.to_cols_array()),
+        );
+    }
+    
 
     // Render function that performs the drawing operations
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?; // Get the next texture for rendering
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default()); // Create a view for the texture
-    
+
         let mut encoder = self.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor {
+            &(wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
-            },
+            })
         );
-    
+
         // Start the render pass
         let mut render_pass = encoder.begin_render_pass(
-            &wgpu::RenderPassDescriptor {
+            &(wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
@@ -375,22 +409,21 @@ impl<'a> State<'a> {
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
-            },
+            })
         );
-    
+
         render_pass.set_pipeline(&self.render_pipeline); // Set the render pipeline
         render_pass.set_bind_group(0, &self.bind_group, &[]); // Bind the uniform buffer
         render_pass.draw(0..6, 0..1); // Draw 6 vertices for two triangles
-    
+
         drop(render_pass); // End the render pass
-    
+
         self.queue.submit(iter::once(encoder.finish())); // Submit the command buffer for execution
         output.present(); // Present the rendered image to the window
-    
-        Ok(())
-    }    
-}
 
+        Ok(())
+    }
+}
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
